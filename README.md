@@ -50,6 +50,16 @@ Additional technologies will be introduced only when justified by product requir
 
 ## Status
 
-Development environment configured.
+Current stage: Day 1 complete.
 
-Current stage: Day 0.
+Implemented:
+- Transaction schema
+- Deterministic data validation
+- Valid / invalid record separation
+- SQLite persistence
+- Database constraints
+- Automated pytest coverage
+
+Next:
+- Financial exception data model
+- Deterministic financial controls
