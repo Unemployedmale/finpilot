@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environments / secrets
+.env
+.env.*
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# VS Code local settings
+.vscode/
+
+# Local database / generated files
+*.db
+*.sqlite
+*.sqlite3
+
+# Model artifacts
+*.pkl
+*.joblib
+
+# Private/raw data
+data/raw/
+data/private/
+
+# Logs
+*.log

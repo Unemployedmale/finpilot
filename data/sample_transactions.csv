@@ -1,0 +1,11 @@
+transaction_id,date,description,vendor,amount,transaction_type,category,department,currency
+T0001,2026-07-01,AWS Cloud Services,AWS,1250.00,expense,Technology,Engineering,SGD
+T0002,2026-07-02,Google Ads July,Google,2300.00,expense,Marketing,Marketing,SGD
+T0003,2026-07-03,Customer Invoice ABC,ABC Pte Ltd,8500.00,revenue,Sales,Sales,SGD
+T0004,2026-07-04,Office Rental July,CapitaLand,5000.00,expense,Rent,Operations,SGD
+T0005,2026-07-05,Slack Subscription,Slack,780.00,expense,Technology,Engineering,USD
+T0006,2026-07-06,Customer Invoice XYZ,XYZ Pte Ltd,12000.00,revenue,Sales,Sales,SGD
+T0007,2026-07-07,Grab Business Transport,Grab,215.40,expense,Transport,Operations,SGD
+T0008,2026-07-08,Meta Advertising,Meta,4150.00,expense,Marketing,Marketing,SGD
+T0009,2026-07-09,AWS Cloud Services,AWS,1390.00,expense,Technology,Engineering,SGD
+T0010,2026-07-10,Office Supplies,OfficeMart,342.75,expense,Office,Operations,SGD
