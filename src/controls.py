@@ -6,18 +6,6 @@ from typing import Any
 import pandas as pd
 
 
-# =========================================================
-# CONFIGURATION
-# =========================================================
-
-# V1 demonstration thresholds.
-#
-# These are configured per currency so the control does not
-# silently assume that all currencies are the same.
-#
-# For a production system, these thresholds would normally
-# be configured by the finance team and could vary by
-# company, entity, department or transaction type.
 DEFAULT_HIGH_VALUE_THRESHOLDS = {
     "SGD": 10_000.00,
     "USD": 10_000.00,
@@ -26,138 +14,253 @@ DEFAULT_HIGH_VALUE_THRESHOLDS = {
 }
 
 
-# =========================================================
-# HIGH-VALUE CONTROL
-# =========================================================
+CONTROL_REQUIREMENTS = {
+    "HIGH_VALUE": {
+        "amount",
+        "currency",
+    },
+    "DUPLICATE_CANDIDATE": {
+        "date",
+        "vendor",
+        "amount",
+    },
+}
+
+
+def get_control_capabilities(
+    df: pd.DataFrame,
+) -> dict[str, dict[str, Any]]:
+    """
+    Return which FinPilot controls are available
+    for the current mapped dataset.
+    """
+
+    available_columns = set(df.columns)
+
+    capabilities: dict[
+        str,
+        dict[str, Any],
+    ] = {}
+
+    for control_name, required_fields in (
+        CONTROL_REQUIREMENTS.items()
+    ):
+        missing_fields = sorted(
+            required_fields
+            - available_columns
+        )
+
+        capabilities[control_name] = {
+            "available": (
+                len(missing_fields) == 0
+            ),
+            "required_fields": sorted(
+                required_fields
+            ),
+            "missing_fields": (
+                missing_fields
+            ),
+        }
+
+    return capabilities
+
 
 def detect_high_value_transactions(
     df: pd.DataFrame,
     thresholds: Mapping[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Detect transactions whose amount exceeds the configured
-    threshold for their currency.
-
-    Parameters
-    ----------
-    df:
-        Validated transaction DataFrame.
-
-    thresholds:
-        Mapping of currency codes to high-value thresholds.
-
-        Example:
-        {
-            "SGD": 10000,
-            "USD": 8000,
-        }
-
-    Returns
-    -------
-    list[dict]
-        Standardised FinPilot exception signals.
+    Detect transactions above the configured
+    currency threshold.
     """
 
     if thresholds is None:
-        thresholds = DEFAULT_HIGH_VALUE_THRESHOLDS
+        thresholds = (
+            DEFAULT_HIGH_VALUE_THRESHOLDS
+        )
+
+    required_fields = (
+        CONTROL_REQUIREMENTS[
+            "HIGH_VALUE"
+        ]
+    )
+
+    if not required_fields.issubset(
+        df.columns
+    ):
+        return []
 
     signals: list[dict[str, Any]] = []
 
     for _, transaction in df.iterrows():
 
-        transaction_id = str(transaction["transaction_id"])
-        currency = str(transaction["currency"]).upper()
-        amount = float(transaction["amount"])
+        transaction_id = str(
+            transaction[
+                "transaction_id"
+            ]
+        )
 
-        # If no threshold has been configured for the currency,
-        # FinPilot does not make up one.
+        currency_value = (
+            transaction["currency"]
+        )
+
+        amount_value = (
+            transaction["amount"]
+        )
+
+        if (
+            pd.isna(currency_value)
+            or pd.isna(amount_value)
+        ):
+            continue
+
+        currency = str(
+            currency_value
+        ).upper()
+
+        amount = float(
+            amount_value
+        )
+
         if currency not in thresholds:
             continue
 
-        threshold = float(thresholds[currency])
+        threshold = float(
+            thresholds[currency]
+        )
 
-        # Important:
-        # The rule is strictly greater than the threshold.
-        #
-        # Example:
-        # 10,000 threshold
-        # 10,000 transaction -> no signal
-        # 10,001 transaction -> signal
         if amount <= threshold:
             continue
 
-        signal = {
-            "transaction_id": transaction_id,
-            "signal_type": "HIGH_VALUE",
-            "source": "RULE",
-            "severity": "HIGH",
-            "score": None,
-            "reason": (
-                "Transaction exceeds the configured "
-                "high-value threshold."
-            ),
-            "evidence": {
-                "amount": amount,
-                "threshold": threshold,
-                "currency": currency,
-            },
-        }
-
-        signals.append(signal)
+        signals.append(
+            {
+                "transaction_id": (
+                    transaction_id
+                ),
+                "signal_type": (
+                    "HIGH_VALUE"
+                ),
+                "source": "RULE",
+                "severity": "HIGH",
+                "score": None,
+                "reason": (
+                    "Transaction exceeds the "
+                    "configured high-value threshold."
+                ),
+                "evidence": {
+                    "amount": amount,
+                    "threshold": threshold,
+                    "currency": currency,
+                },
+            }
+        )
 
     return signals
 
-
-# =========================================================
-# DUPLICATE-CANDIDATE CONTROL
-# =========================================================
 
 def detect_duplicate_candidates(
     df: pd.DataFrame,
 ) -> list[dict[str, Any]]:
     """
-    Detect transactions that may represent duplicate
-    financial activity.
+    Detect duplicate candidates using:
 
-    Two or more transactions are treated as duplicate
-    candidates when they have:
+    - same date
+    - same vendor
+    - same amount
 
-    - different transaction IDs
-    - the same date
-    - the same vendor
-    - the same amount
-
-    This control does NOT claim that the transactions are
-    confirmed duplicates.
-
-    It only creates evidence for human review.
+    Rows with missing comparison data are skipped.
     """
 
     if df.empty:
         return []
 
+    required_fields = (
+        CONTROL_REQUIREMENTS[
+            "DUPLICATE_CANDIDATE"
+        ]
+    )
+
+    if not required_fields.issubset(
+        df.columns
+    ):
+        return []
+
     working_df = df.copy()
 
-    # -----------------------------------------------------
-    # Normalise values used for comparison
-    # -----------------------------------------------------
+    usable_mask = (
+        working_df["date"].notna()
+        & working_df["vendor"].notna()
+        & working_df["amount"].notna()
+    )
 
-    working_df["_duplicate_date"] = pd.to_datetime(
+    working_df = (
+        working_df.loc[
+            usable_mask
+        ]
+        .copy()
+    )
+
+    if working_df.empty:
+        return []
+
+    vendor_not_blank = (
+        working_df["vendor"]
+        .astype(str)
+        .str.strip()
+        .ne("")
+    )
+
+    working_df = (
+        working_df.loc[
+            vendor_not_blank
+        ]
+        .copy()
+    )
+
+    if working_df.empty:
+        return []
+
+    working_df[
+        "_duplicate_date"
+    ] = pd.to_datetime(
         working_df["date"],
         errors="coerce",
     ).dt.strftime("%Y-%m-%d")
 
-    working_df["_duplicate_vendor"] = (
+    working_df[
+        "_duplicate_vendor"
+    ] = (
         working_df["vendor"]
         .astype(str)
         .str.strip()
         .str.casefold()
     )
 
-    working_df["_duplicate_amount"] = pd.to_numeric(
+    working_df[
+        "_duplicate_amount"
+    ] = pd.to_numeric(
         working_df["amount"],
         errors="coerce",
     )
+
+    valid_comparison_mask = (
+        working_df[
+            "_duplicate_date"
+        ].notna()
+        & working_df[
+            "_duplicate_amount"
+        ].notna()
+    )
+
+    working_df = (
+        working_df.loc[
+            valid_comparison_mask
+        ]
+        .copy()
+    )
+
+    if working_df.empty:
+        return []
 
     duplicate_columns = [
         "_duplicate_date",
@@ -165,13 +268,19 @@ def detect_duplicate_candidates(
         "_duplicate_amount",
     ]
 
-    # Keep every member of a duplicate group.
-    duplicate_mask = working_df.duplicated(
-        subset=duplicate_columns,
-        keep=False,
+    duplicate_mask = (
+        working_df.duplicated(
+            subset=duplicate_columns,
+            keep=False,
+        )
     )
 
-    duplicate_df = working_df.loc[duplicate_mask].copy()
+    duplicate_df = (
+        working_df.loc[
+            duplicate_mask
+        ]
+        .copy()
+    )
 
     if duplicate_df.empty:
         return []
@@ -186,8 +295,6 @@ def detect_duplicate_candidates(
 
     for _, group in grouped:
 
-        # A duplicate group must contain at least two
-        # different transaction IDs.
         transaction_ids = (
             group["transaction_id"]
             .astype(str)
@@ -198,79 +305,108 @@ def detect_duplicate_candidates(
         if len(transaction_ids) < 2:
             continue
 
-        for _, transaction in group.iterrows():
+        for _, transaction in (
+            group.iterrows()
+        ):
 
             transaction_id = str(
-                transaction["transaction_id"]
+                transaction[
+                    "transaction_id"
+                ]
             )
 
             candidate_transaction_ids = [
                 candidate_id
-                for candidate_id in transaction_ids
-                if candidate_id != transaction_id
+                for candidate_id
+                in transaction_ids
+                if candidate_id
+                != transaction_id
             ]
 
-            # Defensive check.
             if not candidate_transaction_ids:
                 continue
 
-            signal = {
-                "transaction_id": transaction_id,
-                "signal_type": "DUPLICATE_CANDIDATE",
-                "source": "RULE",
-                "severity": "HIGH",
-                "score": None,
-                "reason": (
-                    "Transaction matches another transaction "
-                    "on vendor, amount and date."
-                ),
-                "evidence": {
-                    "vendor": str(transaction["vendor"]),
-                    "amount": float(transaction["amount"]),
-                    "date": transaction[
-                        "_duplicate_date"
-                    ],
-                    "candidate_transaction_ids": (
-                        candidate_transaction_ids
+            signals.append(
+                {
+                    "transaction_id": (
+                        transaction_id
                     ),
-                },
-            }
-
-            signals.append(signal)
+                    "signal_type": (
+                        "DUPLICATE_CANDIDATE"
+                    ),
+                    "source": "RULE",
+                    "severity": "HIGH",
+                    "score": None,
+                    "reason": (
+                        "Transaction matches "
+                        "another transaction "
+                        "on vendor, amount and date."
+                    ),
+                    "evidence": {
+                        "vendor": str(
+                            transaction[
+                                "vendor"
+                            ]
+                        ),
+                        "amount": float(
+                            transaction[
+                                "amount"
+                            ]
+                        ),
+                        "date": (
+                            transaction[
+                                "_duplicate_date"
+                            ]
+                        ),
+                        "candidate_transaction_ids": (
+                            candidate_transaction_ids
+                        ),
+                    },
+                }
+            )
 
     return signals
 
 
-# =========================================================
-# CONTROL ORCHESTRATOR
-# =========================================================
-
 def run_financial_controls(
     df: pd.DataFrame,
-    high_value_thresholds: Mapping[str, float] | None = None,
+    high_value_thresholds: Mapping[
+        str,
+        float,
+    ] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Run all deterministic V1 financial controls.
-
-    The controls currently include:
-
-    1. HIGH_VALUE
-    2. DUPLICATE_CANDIDATE
-
-    All controls return signals using the same standard
-    FinPilot signal structure.
+    Run all currently available deterministic
+    FinPilot controls.
     """
 
     signals: list[dict[str, Any]] = []
 
-    high_value_signals = detect_high_value_transactions(
-        df,
-        thresholds=high_value_thresholds,
+    capabilities = (
+        get_control_capabilities(df)
     )
 
-    duplicate_signals = detect_duplicate_candidates(df)
+    if capabilities[
+        "HIGH_VALUE"
+    ]["available"]:
 
-    signals.extend(high_value_signals)
-    signals.extend(duplicate_signals)
+        signals.extend(
+            detect_high_value_transactions(
+                df,
+                thresholds=(
+                    high_value_thresholds
+                ),
+            )
+        )
+
+    if capabilities[
+        "DUPLICATE_CANDIDATE"
+    ]["available"]:
+
+        signals.extend(
+            detect_duplicate_candidates(
+                df
+            )
+        )
 
     return signals

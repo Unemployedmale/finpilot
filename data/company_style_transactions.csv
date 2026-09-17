@@ -1,0 +1,12 @@
+Document Number,Posting Date,Supplier,Gross Amount,Currency,Payment Description,Cost Center
+INV-1001,2026-09-01,AWS,15000,SGD,Cloud infrastructure,Technology
+INV-1002,2026-09-02,Google,2300,SGD,Advertising,Marketing
+INV-1003,2026-09-03,OfficeMart,480,SGD,Office supplies,Operations
+INV-1004,2026-09-04,Grab,320,SGD,Business transport,Operations
+INV-1005,2026-09-05,Meta,12500,SGD,Advertising,Marketing
+INV-1006,2026-09-06,Slack,900,USD,Software subscription,Technology
+INV-1007,2026-09-07,AWS,3500,SGD,Cloud infrastructure,Technology
+INV-1008,2026-09-08,CapitaLand,5000,SGD,Office rental,Operations
+INV-1009,2026-09-09,ABC Consulting,18000,SGD,Consulting services,Finance
+INV-1010,2026-09-10,OfficeMart,480,SGD,Office supplies,Operations
+INV-1011,2026-09-10,OfficeMart,480,SGD,Office supplies,Operations

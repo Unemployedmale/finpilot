@@ -9,33 +9,50 @@ import pandas as pd
 DB_PATH = Path("finpilot.db")
 
 
-def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
+def get_connection(
+    db_path: Path = DB_PATH,
+) -> sqlite3.Connection:
     """
-    Create and return a connection to the FinPilot SQLite database.
+    Create and return a connection to the FinPilot
+    SQLite database.
 
-    Foreign-key enforcement is enabled for every connection.
+    Foreign-key enforcement is enabled for every
+    connection.
     """
-    conn = sqlite3.connect(db_path)
 
-    # SQLite does not enforce foreign keys automatically.
-    # This ensures relationships between transactions,
-    # exceptions and signals are protected.
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = sqlite3.connect(
+        db_path
+    )
+
+    conn.execute(
+        "PRAGMA foreign_keys = ON"
+    )
 
     return conn
 
 
-def initialize_database(db_path: Path = DB_PATH) -> None:
+def initialize_database(
+    db_path: Path = DB_PATH,
+) -> None:
     """
-    Create all required FinPilot database tables
-    if they do not already exist.
+    Create all FinPilot database tables if they do
+    not already exist.
+
+    Core transaction fields are required.
+
+    Optional transaction fields may be NULL because
+    different finance systems provide different levels
+    of detail.
     """
 
-    with get_connection(db_path) as conn:
+    with get_connection(
+        db_path
+    ) as conn:
 
-        # =========================================================
+        # =================================================
         # 1. TRANSACTIONS
-        # =========================================================
+        # =================================================
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS transactions (
@@ -43,24 +60,25 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
 
                 date TEXT NOT NULL,
 
-                description TEXT NOT NULL,
+                description TEXT,
 
-                vendor TEXT NOT NULL,
+                vendor TEXT,
 
                 amount REAL NOT NULL
                     CHECK (amount > 0),
 
-                transaction_type TEXT NOT NULL
+                transaction_type TEXT
                     CHECK (
-                        transaction_type IN (
+                        transaction_type IS NULL
+                        OR transaction_type IN (
                             'revenue',
                             'expense'
                         )
                     ),
 
-                category TEXT NOT NULL,
+                category TEXT,
 
-                department TEXT NOT NULL,
+                department TEXT,
 
                 currency TEXT NOT NULL
                     CHECK (
@@ -75,9 +93,10 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
             """
         )
 
-        # =========================================================
+        # =================================================
         # 2. EXCEPTIONS
-        # =========================================================
+        # =================================================
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS exceptions (
@@ -111,15 +130,20 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
                 updated_at TEXT NOT NULL
                     DEFAULT CURRENT_TIMESTAMP,
 
-                FOREIGN KEY (transaction_id)
-                    REFERENCES transactions(transaction_id)
+                FOREIGN KEY (
+                    transaction_id
+                )
+                    REFERENCES transactions(
+                        transaction_id
+                    )
             )
             """
         )
 
-        # =========================================================
+        # =================================================
         # 3. EXCEPTION SIGNALS
-        # =========================================================
+        # =================================================
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS exception_signals (
@@ -163,11 +187,19 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
                 created_at TEXT NOT NULL
                     DEFAULT CURRENT_TIMESTAMP,
 
-                FOREIGN KEY (exception_id)
-                    REFERENCES exceptions(exception_id),
+                FOREIGN KEY (
+                    exception_id
+                )
+                    REFERENCES exceptions(
+                        exception_id
+                    ),
 
-                FOREIGN KEY (transaction_id)
-                    REFERENCES transactions(transaction_id)
+                FOREIGN KEY (
+                    transaction_id
+                )
+                    REFERENCES transactions(
+                        transaction_id
+                    )
             )
             """
         )
@@ -178,20 +210,14 @@ def save_transactions(
     db_path: Path = DB_PATH,
 ) -> int:
     """
-    Save validated transactions to the database.
+    Save validated FinPilot transactions.
 
-    Parameters
-    ----------
-    df:
-        DataFrame containing validated FinPilot transactions.
-
-    db_path:
-        SQLite database path.
+    Optional fields may contain NULL values.
 
     Returns
     -------
     int
-        Number of transactions inserted.
+        Number of rows inserted.
     """
 
     if df.empty:
@@ -209,13 +235,51 @@ def save_transactions(
         "currency",
     ]
 
-    records = df[columns].copy()
+    records = (
+        df[
+            columns
+        ]
+        .copy()
+    )
 
-    # Pandas validation converts dates into datetime objects.
-    # SQLite stores our dates as YYYY-MM-DD text.
-    records["date"] = records["date"].dt.strftime("%Y-%m-%d")
+    # Validation converts valid dates to Pandas
+    # datetime values. SQLite stores them as
+    # YYYY-MM-DD text in V1.
 
-    with get_connection(db_path) as conn:
+    records["date"] = (
+        records["date"]
+        .dt.strftime(
+            "%Y-%m-%d"
+        )
+    )
+
+    # Pandas can represent missing values using NaN,
+    # NaT or pd.NA.
+    #
+    # SQLite expects Python None when storing SQL NULL.
+
+    optional_columns = [
+        "description",
+        "vendor",
+        "transaction_type",
+        "category",
+        "department",
+    ]
+
+    for column in optional_columns:
+
+        records[column] = (
+            records[column]
+            .where(
+                records[column].notna(),
+                None,
+            )
+        )
+
+    with get_connection(
+        db_path
+    ) as conn:
+
         records.to_sql(
             "transactions",
             conn,

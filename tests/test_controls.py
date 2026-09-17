@@ -3,6 +3,7 @@ import pandas as pd
 from src.controls import (
     detect_duplicate_candidates,
     detect_high_value_transactions,
+    get_control_capabilities,
     run_financial_controls,
 )
 
@@ -10,6 +11,7 @@ from src.controls import (
 # =========================================================
 # HIGH-VALUE CONTROL TESTS
 # =========================================================
+
 
 def test_high_value_transaction_is_detected():
     """
@@ -77,7 +79,7 @@ def test_transaction_below_threshold_is_not_detected():
 
 def test_transaction_equal_to_threshold_is_not_detected():
     """
-    The current V1 rule uses:
+    The V1 rule uses:
 
         amount > threshold
 
@@ -135,15 +137,12 @@ def test_currency_without_threshold_is_skipped():
 # DUPLICATE-CANDIDATE TESTS
 # =========================================================
 
+
 def test_duplicate_candidates_are_detected():
     """
-    Different transaction IDs with the same:
-
-    vendor
-    amount
-    date
-
-    should be flagged as duplicate candidates.
+    Different transaction IDs with the same vendor,
+    amount and date should be flagged as duplicate
+    candidates.
     """
 
     df = pd.DataFrame(
@@ -290,9 +289,101 @@ def test_different_date_is_not_duplicate():
     assert signals == []
 
 
+def test_duplicate_control_skips_missing_vendor():
+    """
+    Missing vendor information should not create
+    false duplicate candidates.
+    """
+
+    df = pd.DataFrame(
+        [
+            {
+                "transaction_id": "T001",
+                "date": "2026-09-01",
+                "vendor": None,
+                "amount": 500,
+                "currency": "SGD",
+            },
+            {
+                "transaction_id": "T002",
+                "date": "2026-09-01",
+                "vendor": None,
+                "amount": 500,
+                "currency": "SGD",
+            },
+        ]
+    )
+
+    signals = detect_duplicate_candidates(df)
+
+    assert signals == []
+
+
+# =========================================================
+# CONTROL CAPABILITY TESTS
+# =========================================================
+
+
+def test_control_capabilities_detect_available_controls():
+    """
+    Both current controls should be available when all
+    required fields are present.
+    """
+
+    df = pd.DataFrame(
+        columns=[
+            "transaction_id",
+            "date",
+            "vendor",
+            "amount",
+            "currency",
+        ]
+    )
+
+    capabilities = get_control_capabilities(df)
+
+    assert capabilities["HIGH_VALUE"]["available"] is True
+
+    assert (
+        capabilities["DUPLICATE_CANDIDATE"]["available"]
+        is True
+    )
+
+
+def test_duplicate_control_unavailable_without_vendor():
+    """
+    HIGH_VALUE can still run without vendor, while
+    DUPLICATE_CANDIDATE cannot.
+    """
+
+    df = pd.DataFrame(
+        columns=[
+            "transaction_id",
+            "date",
+            "amount",
+            "currency",
+        ]
+    )
+
+    capabilities = get_control_capabilities(df)
+
+    assert capabilities["HIGH_VALUE"]["available"] is True
+
+    assert (
+        capabilities["DUPLICATE_CANDIDATE"]["available"]
+        is False
+    )
+
+    assert (
+        capabilities["DUPLICATE_CANDIDATE"]["missing_fields"]
+        == ["vendor"]
+    )
+
+
 # =========================================================
 # COMPLETE CONTROL ENGINE TEST
 # =========================================================
+
 
 def test_run_financial_controls_combines_controls():
     """
@@ -349,4 +440,3 @@ def test_run_financial_controls_combines_controls():
     assert len(high_value_signals) == 2
     assert len(duplicate_signals) == 2
     assert len(signals) == 4
-    
